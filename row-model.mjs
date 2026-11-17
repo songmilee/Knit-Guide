@@ -6,11 +6,12 @@ export function calibration(positions) {
   return { page: first.page, step };
 }
 
-export function rowPosition(positions, row, guideHeight = 0) {
+export function rowPosition(positions, row, guideHeight = 0, currentPage = null) {
   const exact = positions?.[row];
   if (exact) return { ...exact, estimated: false };
   const basis = calibration(positions);
   if (!basis) return null;
+  if (currentPage !== null && basis.page !== currentPage) return null;
   const anchors = Object.entries(positions)
     .map(([key, value]) => ({ row: Number(key), ...value }))
     .filter(value => Number.isInteger(value.row) && value.row > 0);
