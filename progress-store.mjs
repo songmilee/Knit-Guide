@@ -25,20 +25,37 @@ function read(database, storeName, key) {
 export async function getLastDocument(database) {
   const current = await read(database, 'files', 'current');
   if (current?.kind === 'pdf' && current.hash) {
-    return await read(database, 'files', `file:${current.hash}`);
+    return restoreFile(await read(database, 'files', `file:${current.hash}`));
   }
-  return current;
+  if (current?.kind === 'photos' && current.photos) {
+    return { ...current, photos: current.photos.map(restoreFile) };
+  }
+  return restoreFile(current);
 }
 
-export function saveLastDocument(database, value, hash = null) {
+function restoreFile(value) {
+  if (!value?.bytes) return value;
+  const type = value.type || (value.kind === 'photos' ? 'image/jpeg' : 'application/pdf');
+  return { ...value, blob: new File([value.bytes], value.name || '도안.pdf', { type }) };
+}
+
+export async function saveLastDocument(database, value, hash = null) {
+  const serialize = async file => ({
+    name: file.name,
+    type: file.blob.type,
+    bytes: await file.blob.arrayBuffer(),
+  });
+  const stored = hash ? await serialize(value) : value.kind === 'photos'
+    ? { kind: 'photos', photos: await Promise.all(value.photos.map(serialize)) }
+    : value;
   return new Promise((resolve, reject) => {
     const transaction = database.transaction('files', 'readwrite');
     const store = transaction.objectStore('files');
     if (hash) {
-      store.put({ blob: value.blob, name: value.name, hash }, `file:${hash}`);
+      store.put({ ...stored, hash }, `file:${hash}`);
       store.put({ kind: 'pdf', hash, name: value.name }, 'current');
     } else {
-      store.put(value, 'current');
+      store.put(stored, 'current');
     }
     transaction.oncomplete = () => resolve();
     transaction.onabort = () => reject(transaction.error || new Error('파일 저장이 중단되었습니다.'));
